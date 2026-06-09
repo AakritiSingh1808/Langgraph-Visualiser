@@ -1,0 +1,2837 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LangGraph Visualizer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e1e2e 0%, #2d2d44 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            padding: 20px;
+            gap: 20px;
+        }
+
+        @media (max-width: 1400px) {
+            .container {
+                padding: 15px;
+                gap: 15px;
+            }
+        }
+
+        header {
+            text-align: center;
+            padding: 20px 0;
+        }
+
+        header h1 {
+            font-size: 2.5em;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        header p {
+            color: #a0a0a0;
+            margin-top: 5px;
+        }
+
+        @media (max-width: 1400px) {
+            header {
+                padding: 15px 0;
+            }
+            
+            header h1 {
+                font-size: 2em;
+            }
+            
+            header p {
+                font-size: 0.9em;
+            }
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            min-height: 600px;
+        }
+
+        @media (max-width: 1400px) {
+            .main-content {
+                grid-template-columns: 1fr;
+                gap: 15px;
+            }
+        }
+
+        .panel {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            flex-direction: column;
+            min-height: 500px;
+        }
+
+        @media (max-width: 1400px) {
+            .panel {
+                min-height: 400px;
+            }
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .panel-title {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        select, button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        select {
+            background: rgba(255, 255, 255, 0.1);
+            color: #e0e0e0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 600;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        #codeInput {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 15px;
+            color: #e0e0e0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            resize: vertical;
+            outline: none;
+            min-height: 300px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        #codeInput::placeholder {
+            color: #666;
+        }
+
+        .diagram-container {
+            flex: 1;
+            overflow: hidden;
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.4) 0%, rgba(15, 23, 42, 0.6) 100%);
+            background-image: 
+                linear-gradient(135deg, rgba(30, 41, 59, 0.4) 0%, rgba(15, 23, 42, 0.6) 100%),
+                repeating-linear-gradient(45deg, transparent, transparent 20px, rgba(255, 255, 255, 0.02) 20px, rgba(255, 255, 255, 0.02) 40px);
+            border-radius: 12px;
+            padding: 0;
+            position: relative;
+            min-height: 600px;
+            height: 600px;
+            box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        @media (max-width: 1400px) {
+            .diagram-container {
+                min-height: 500px;
+                height: 500px;
+            }
+        }
+
+        /* Fullscreen Modal Overlay */
+        .fullscreen-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #1e1e2e;
+            z-index: 10000;
+            padding: 0;
+        }
+
+        .fullscreen-modal.active {
+            display: block;
+        }
+
+        .fullscreen-modal #cytoscapeGraphFullscreen {
+            width: 100%;
+            height: 100vh;
+        }
+
+        .fullscreen-modal .graph-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 10001;
+        }
+
+        .fullscreen-close-btn {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10001;
+            background: rgba(239, 68, 68, 0.9);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .fullscreen-close-btn:hover {
+            background: rgba(239, 68, 68, 1);
+            transform: scale(1.05);
+        }
+
+        #cytoscapeGraph {
+            width: 100%;
+            height: 100%;
+            min-height: 600px;
+        }
+
+        @media (max-width: 1400px) {
+            #cytoscapeGraph {
+                min-height: 500px;
+            }
+        }
+
+        .graph-controls {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            display: flex;
+            gap: 8px;
+            z-index: 10;
+        }
+
+        .control-btn {
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #e0e0e0;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: all 0.2s;
+        }
+
+        .control-btn:hover {
+            background: rgba(102, 126, 234, 0.8);
+            border-color: #667eea;
+        }
+
+        .control-btn.active {
+            background: rgba(102, 126, 234, 0.9);
+            border-color: #818cf8;
+            color: #fff;
+        }
+
+        /* Graph legend overlay */
+        .graph-legend {
+            position: absolute;
+            bottom: 15px;
+            left: 15px;
+            z-index: 10;
+            background: rgba(15, 23, 42, 0.88);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 10px;
+            padding: 12px 14px;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+            max-width: 220px;
+            transition: opacity 0.2s ease;
+        }
+
+        .fullscreen-modal .graph-legend {
+            bottom: 20px;
+            left: 20px;
+            z-index: 10001;
+        }
+
+        .graph-legend-title {
+            font-size: 0.72em;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #94a3b8;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8em;
+            color: #cbd5e1;
+            margin: 5px 0;
+        }
+
+        .legend-swatch {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+            border: 2px solid;
+        }
+
+        .legend-swatch.start { background: #10b981; border-color: #059669; border-radius: 50%; }
+        .legend-swatch.entry { background: #3b82f6; border-color: #2563eb; border-radius: 4px; }
+        .legend-swatch.end { background: #ef4444; border-color: #dc2626; border-radius: 50%; }
+        .legend-swatch.regular { background: #475569; border-color: #64748b; border-radius: 4px; }
+        .legend-swatch.conditional { background: #f97316; border-color: #ea580c; transform: rotate(45deg); width: 12px; height: 12px; }
+        .legend-swatch.bottleneck { background: #dc2626; border-color: #991b1b; clip-path: polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%); }
+        .legend-swatch.loop { background: #eab308; border-color: #ca8a04; border-style: double; border-width: 3px; border-radius: 4px; }
+
+        .node-detail-panel {
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 350px;
+            background: rgba(30, 30, 46, 0.98);
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 25px;
+            overflow-y: auto;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+            z-index: 20;
+        }
+
+        .node-detail-panel.open {
+            transform: translateX(0);
+        }
+
+        .node-detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .node-detail-title {
+            font-size: 1.3em;
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .close-panel-btn {
+            background: none;
+            border: none;
+            color: #a0a0a0;
+            font-size: 1.5em;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+        }
+
+        .close-panel-btn:hover {
+            color: #fff;
+        }
+
+        .node-type-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 15px;
+        }
+
+        .node-type-badge.entry {
+            background: rgba(59, 130, 246, 0.2);
+            color: #3b82f6;
+            border: 1px solid #3b82f6;
+        }
+
+        .node-type-badge.end {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+            border: 1px solid #ef4444;
+        }
+
+        .node-type-badge.regular {
+            background: rgba(102, 126, 234, 0.2);
+            color: #667eea;
+            border: 1px solid #667eea;
+        }
+
+        .node-type-badge.error {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+            border: 1px solid #ef4444;
+        }
+
+        .node-type-badge.conditional {
+            background: rgba(249, 115, 22, 0.2);
+            color: #f97316;
+            border: 1px solid #f97316;
+        }
+
+        .node-detail-section {
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 0.9em;
+            color: #a0a0a0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+        }
+
+        .edge-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .edge-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-bottom: 6px;
+            border-left: 3px solid #667eea;
+        }
+
+        .edge-label {
+            color: #f97316;
+            font-size: 0.85em;
+            font-style: italic;
+        }
+
+        .stat-value {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .stat-value.warning {
+            color: #f97316;
+        }
+
+        .stat-value.error {
+            color: #ef4444;
+        }
+
+        .insights-panel {
+            margin-top: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        @media (max-width: 1400px) {
+            .insights-panel {
+                padding: 15px;
+            }
+        }
+
+        .insights-badges {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .insight-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 18px;
+            border-radius: 24px;
+            font-size: 0.9em;
+            font-weight: 700;
+            border: 2px solid;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            backdrop-filter: blur(10px);
+        }
+
+        .insight-badge:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        }
+
+        .insight-badge.success {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.25) 0%, rgba(5, 150, 105, 0.15) 100%);
+            border-color: #10b981;
+            color: #10b981;
+        }
+
+        .insight-badge.warning {
+            background: linear-gradient(135deg, rgba(251, 146, 60, 0.25) 0%, rgba(249, 115, 22, 0.15) 100%);
+            border-color: #fb923c;
+            color: #fb923c;
+        }
+
+        .insight-badge.error {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(220, 38, 38, 0.15) 100%);
+            border-color: #ef4444;
+            color: #ef4444;
+        }
+
+        .insight-badge.info {
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.25) 0%, rgba(124, 58, 237, 0.15) 100%);
+            border-color: #8b5cf6;
+            color: #a78bfa;
+        }
+
+        .badge-icon {
+            font-size: 1.1em;
+        }
+
+        .insight-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .insight-item {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 3px solid #667eea;
+        }
+
+        .insight-label {
+            font-size: 0.85em;
+            color: #a0a0a0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 5px;
+        }
+
+        .insight-value {
+            font-size: 1.1em;
+            color: #e0e0e0;
+            font-weight: 600;
+        }
+
+        .insight-value.warning {
+            color: #f39c12;
+        }
+
+        .insight-value.error {
+            color: #e74c3c;
+        }
+
+        .insight-value.success {
+            color: #2ecc71;
+        }
+
+        .status {
+            padding: 8px 16px;
+            border-radius: 6px;
+            text-align: center;
+            margin-top: 10px;
+            font-weight: 600;
+        }
+
+        .status.error {
+            background: rgba(231, 76, 60, 0.2);
+            color: #e74c3c;
+            border: 1px solid #e74c3c;
+        }
+
+        .status.success {
+            background: rgba(46, 204, 113, 0.2);
+            color: #2ecc71;
+            border: 1px solid #2ecc71;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        .placeholder {
+            text-align: center;
+            color: #666;
+            padding: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 400px;
+        }
+
+        .api-status {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+
+        .api-status.online {
+            background: rgba(46, 204, 113, 0.2);
+            color: #2ecc71;
+            border: 1px solid #2ecc71;
+        }
+
+        .api-status.offline {
+            background: rgba(231, 76, 60, 0.2);
+            color: #e74c3c;
+            border: 1px solid #e74c3c;
+        }
+
+        .mermaid-code-panel {
+            margin-top: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            overflow: hidden;
+        }
+
+        .mermaid-code-header {
+            padding: 15px 20px;
+            background: rgba(255, 255, 255, 0.03);
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.2s;
+        }
+
+        .mermaid-code-header:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .mermaid-code-header h3 {
+            margin: 0;
+            font-size: 1.1em;
+            color: #667eea;
+        }
+
+        .collapse-icon {
+            transition: transform 0.3s;
+        }
+
+        .collapse-icon.open {
+            transform: rotate(180deg);
+        }
+
+        .mermaid-code-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+
+        .mermaid-code-content.open {
+            max-height: 400px;
+        }
+
+        .mermaid-code-pre {
+            margin: 0;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            color: #e0e0e0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            overflow-x: auto;
+            overflow-y: auto;
+            max-height: 350px;
+        }
+
+        .copy-mermaid-btn {
+            margin: 15px 20px;
+            padding: 8px 16px;
+            background: rgba(102, 126, 234, 0.2);
+            border: 1px solid #667eea;
+            color: #667eea;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.2s;
+        }
+
+        .copy-mermaid-btn:hover {
+            background: rgba(102, 126, 234, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="api-status" id="apiStatus">Checking API...</div>
+    
+    <div class="container">
+        <header>
+            <h1>LangGraph Visualizer</h1>
+            <p>Paste your LangGraph code and visualize your agent workflow</p>
+        </header>
+
+        <div class="main-content">
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">LangGraph Code</div>
+                    <div class="controls">
+                        <select id="exampleSelect">
+                            <option value="">Load Example...</option>
+                            <option value="simple">Simple Chain (4 nodes, linear)</option>
+                            <option value="rag">RAG Agent (with loop)</option>
+                            <option value="builder">Builder-Executor (2-phase)</option>
+                            <option value="multi_agent">Multi-Agent (supervisor, bottleneck)</option>
+                            <option value="router">Router (intent dispatch)</option>
+                        </select>
+                        <button id="shareBtn" disabled>🔗 Share</button>
+                        <button id="clearBtn">Clear</button>
+                    </div>
+                </div>
+                <textarea id="codeInput" placeholder="Paste your LangGraph StateGraph code here..."></textarea>
+                <button id="visualizeBtn" style="margin-top: 15px;">Visualize Graph</button>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">Graph Visualization</div>
+                    <div class="controls">
+                        <select id="exportSelect" disabled>
+                            <option value="">Export...</option>
+                            <option value="png">PNG Image</option>
+                            <option value="svg">SVG Image</option>
+                            <option value="mermaid">Mermaid Code</option>
+                            <option value="json">JSON Data</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <div>Parsing and generating diagram...</div>
+                </div>
+                <div class="diagram-container" id="diagramContainer">
+                    <div class="placeholder" id="placeholder">
+                        <div>
+                            <div style="font-size: 3em; margin-bottom: 15px;">📊</div>
+                            <div style="font-size: 1.1em;">Your graph diagram will appear here</div>
+                            <div style="font-size: 0.9em; color: #888; margin-top: 8px;">
+                                Paste LangGraph code and click "Visualize Graph"
+                            </div>
+                        </div>
+                    </div>
+                    <div id="cytoscapeGraph"></div>
+                    <div class="graph-controls" id="graphControls" style="display: none;">
+                        <button class="control-btn" id="fullscreenBtn" title="Fullscreen mode">⛶ Fullscreen</button>
+                        <button class="control-btn" id="layoutDirBtn" title="Toggle vertical / horizontal layout">⇄ Horizontal</button>
+                        <button class="control-btn" id="legendBtn" title="Toggle legend">🛈 Legend</button>
+                        <button class="control-btn" id="fitBtn" title="Fit to screen">⊡ Fit</button>
+                        <button class="control-btn" id="zoomInBtn" title="Zoom in">+ Zoom In</button>
+                        <button class="control-btn" id="zoomOutBtn" title="Zoom out">- Zoom Out</button>
+                        <button class="control-btn" id="resetLayoutBtn" title="Reset layout">↻ Reset</button>
+                    </div>
+                    <div class="graph-legend" id="graphLegend" style="display: none;">
+                        <div class="graph-legend-title">Legend</div>
+                        <div class="legend-item"><span class="legend-swatch start"></span> Start</div>
+                        <div class="legend-item"><span class="legend-swatch entry"></span> Entry node</div>
+                        <div class="legend-item"><span class="legend-swatch regular"></span> Regular node</div>
+                        <div class="legend-item"><span class="legend-swatch conditional"></span> Conditional (router)</div>
+                        <div class="legend-item"><span class="legend-swatch bottleneck"></span> Bottleneck (3+ in)</div>
+                        <div class="legend-item"><span class="legend-swatch loop"></span> On a loop</div>
+                        <div class="legend-item"><span class="legend-swatch end"></span> End</div>
+                    </div>
+                    <div class="node-detail-panel" id="nodeDetailPanel">
+                        <div class="node-detail-header">
+                            <div class="node-detail-title" id="nodeDetailTitle">Node Details</div>
+                            <button class="close-panel-btn" id="closePanelBtn">×</button>
+                        </div>
+                        <div id="nodeDetailContent"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="insights-panel" id="insightsPanel" style="display: none;">
+            <div class="panel-title" style="margin-bottom: 15px;">Graph Insights</div>
+            <div id="insightsContent"></div>
+        </div>
+
+        <div class="mermaid-code-panel" id="mermaidCodePanel" style="display: none;">
+            <div class="mermaid-code-header" id="mermaidCodeHeader">
+                <h3>📊 Generated Mermaid Code</h3>
+                <span class="collapse-icon">▼</span>
+            </div>
+            <div class="mermaid-code-content" id="mermaidCodeContent">
+                <pre class="mermaid-code-pre" id="mermaidCodePre"></pre>
+                <button class="copy-mermaid-btn" id="copyMermaidBtn">Copy to Clipboard</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Fullscreen Modal -->
+    <div class="fullscreen-modal" id="fullscreenModal">
+        <button class="fullscreen-close-btn" id="fullscreenCloseBtn">✕ Close Fullscreen</button>
+        <div class="graph-controls">
+            <button class="control-btn" id="layoutDirBtnFs" title="Toggle vertical / horizontal layout">⇄ Horizontal</button>
+            <button class="control-btn" id="fitBtnFs" title="Fit to screen">⊡ Fit</button>
+            <button class="control-btn" id="zoomInBtnFs" title="Zoom in">+ Zoom In</button>
+            <button class="control-btn" id="zoomOutBtnFs" title="Zoom out">- Zoom Out</button>
+            <button class="control-btn" id="resetLayoutBtnFs" title="Reset layout">↻ Reset</button>
+        </div>
+        <div class="graph-legend" id="graphLegendFs">
+            <div class="graph-legend-title">Legend</div>
+            <div class="legend-item"><span class="legend-swatch start"></span> Start</div>
+            <div class="legend-item"><span class="legend-swatch entry"></span> Entry node</div>
+            <div class="legend-item"><span class="legend-swatch regular"></span> Regular node</div>
+            <div class="legend-item"><span class="legend-swatch conditional"></span> Conditional (router)</div>
+            <div class="legend-item"><span class="legend-swatch bottleneck"></span> Bottleneck (3+ in)</div>
+            <div class="legend-item"><span class="legend-swatch loop"></span> On a loop</div>
+            <div class="legend-item"><span class="legend-swatch end"></span> End</div>
+        </div>
+        <div id="cytoscapeGraphFullscreen"></div>
+    </div>
+
+    <script>
+        // Configuration
+        // When served from a web server (production/deploy), use the same origin.
+        // When opened directly as a file (file://), fall back to local backend.
+        const API_URL = (window.location.protocol === 'file:' || !window.location.origin || window.location.origin === 'null')
+            ? 'http://localhost:8000'
+            : window.location.origin;
+        
+        // Global Cytoscape instances
+        let cy = null;
+        let cyFullscreen = null;
+        let currentGraphData = null;
+        let currentElements = null;
+        let currentLayoutDir = 'TB';   // 'TB' (vertical) or 'LR' (horizontal) - main view
+        let fsLayoutDir = 'TB';        // layout direction for fullscreen view
+
+        // Example graphs
+        const examples = {
+            simple: `# Simple Chain - Linear 4-node chain (no conditionals)
+from langgraph.graph import StateGraph, END
+from typing import TypedDict
+
+class TicketState(TypedDict):
+    ticket_id: str
+    message: str
+    category: str
+    priority: str
+    assigned_to: str
+
+def receive_ticket(state): return state
+def classify_ticket(state): return state
+def prioritize_ticket(state): return state
+def assign_ticket(state): return state
+
+graph = StateGraph(TicketState)
+graph.add_node("receive", receive_ticket)
+graph.add_node("classify", classify_ticket)
+graph.add_node("prioritize", prioritize_ticket)
+graph.add_node("assign", assign_ticket)
+
+graph.set_entry_point("receive")
+graph.add_edge("receive", "classify")
+graph.add_edge("classify", "prioritize")
+graph.add_edge("prioritize", "assign")
+graph.add_edge("assign", END)
+
+app = graph.compile()`,
+            
+            rag: `# RAG Agent - retrieve → grade → generate with conditional rewrite loop
+from langgraph.graph import StateGraph, END
+from typing import TypedDict, List
+
+class RAGState(TypedDict):
+    question: str
+    documents: List[str]
+    relevance_score: float
+    answer: str
+    attempts: int
+
+def retrieve_documents(state): return state
+def grade_documents(state): return state
+def generate_answer(state): return state
+def rewrite_question(state): return state
+
+def should_rewrite(state):
+    return "rewrite" if state['relevance_score'] < 0.8 else "finish"
+
+graph = StateGraph(RAGState)
+graph.add_node("retrieve", retrieve_documents)
+graph.add_node("grade", grade_documents)
+graph.add_node("generate", generate_answer)
+graph.add_node("rewrite", rewrite_question)
+
+graph.set_entry_point("retrieve")
+graph.add_edge("retrieve", "grade")
+graph.add_edge("generate", END)
+
+graph.add_conditional_edges(
+    "grade",
+    should_rewrite,
+    {"rewrite": "rewrite", "finish": "generate"}
+)
+
+graph.add_edge("rewrite", "retrieve")  # Loop back
+app = graph.compile()`,
+            
+            builder: `# Builder-Executor - Two-phase agent with conditional success/failure routing
+from langgraph.graph import StateGraph, END
+from typing import TypedDict, List
+
+class TaskState(TypedDict):
+    user_request: str
+    plan: List[str]
+    current_step: int
+    success: bool
+    error_message: str
+
+def builder(state): return state
+def executor(state): return state
+def validator(state): return state
+def error_handler(state): return state
+
+def route_executor(state):
+    if state.get('error_message'):
+        return "error"
+    elif state['current_step'] >= len(state['plan']):
+        return "validate"
+    else:
+        return "continue"
+
+def route_validator(state):
+    return "finish" if state['success'] else "error"
+
+graph = StateGraph(TaskState)
+graph.add_node("builder", builder)
+graph.add_node("executor", executor)
+graph.add_node("validator", validator)
+graph.add_node("error_handler", error_handler)
+
+graph.set_entry_point("builder")
+graph.add_edge("builder", "executor")
+
+graph.add_conditional_edges(
+    "executor",
+    route_executor,
+    {"continue": "executor", "validate": "validator", "error": "error_handler"}
+)
+
+graph.add_conditional_edges(
+    "validator",
+    route_validator,
+    {"finish": END, "error": "error_handler"}
+)
+
+graph.add_edge("error_handler", END)
+app = graph.compile()`,
+
+            multi_agent: `# Multi-Agent - Supervisor routes work to specialist agents (bottleneck pattern)
+from langgraph.graph import StateGraph, END
+from typing import TypedDict, List
+
+class TeamState(TypedDict):
+    task: str
+    next_agent: str
+    research_notes: str
+    code: str
+    review: str
+    messages: List[str]
+
+def supervisor(state):
+    task = state["task"]
+    return {"next_agent": "researcher", "messages": state["messages"] + ["routing"]}
+
+def researcher(state):
+    notes = "findings for: " + state["task"]
+    return {"research_notes": notes}
+
+def coder(state):
+    return {"code": "def solution(): pass"}
+
+def reviewer(state):
+    return {"review": "looks good", "next_agent": "done"}
+
+def route_next(state):
+    return state["next_agent"]
+
+graph = StateGraph(TeamState)
+graph.add_node("supervisor", supervisor)
+graph.add_node("researcher", researcher)
+graph.add_node("coder", coder)
+graph.add_node("reviewer", reviewer)
+
+graph.set_entry_point("supervisor")
+
+# All agents report back to supervisor (makes supervisor a bottleneck)
+graph.add_edge("researcher", "supervisor")
+graph.add_edge("coder", "supervisor")
+graph.add_edge("reviewer", "supervisor")
+
+graph.add_conditional_edges(
+    "supervisor",
+    route_next,
+    {
+        "researcher": "researcher",
+        "coder": "coder",
+        "reviewer": "reviewer",
+        "done": END
+    }
+)
+
+app = graph.compile()`,
+
+            router: `# Router - Intent classifier dispatches to specialized handlers
+from langgraph.graph import StateGraph, END
+from typing import TypedDict
+
+class QueryState(TypedDict):
+    query: str
+    intent: str
+    confidence: float
+    response: str
+
+def classify_intent(state):
+    query = state["query"]
+    return {"intent": "billing", "confidence": 0.92}
+
+def handle_billing(state):
+    return {"response": "Billing handled for: " + state["query"]}
+
+def handle_technical(state):
+    return {"response": "Technical support for: " + state["query"]}
+
+def handle_general(state):
+    return {"response": "General answer for: " + state["query"]}
+
+def fallback(state):
+    return {"response": "Escalating to a human agent."}
+
+def route_intent(state):
+    if state["confidence"] < 0.5:
+        return "fallback"
+    return state["intent"]
+
+graph = StateGraph(QueryState)
+graph.add_node("classify", classify_intent)
+graph.add_node("billing", handle_billing)
+graph.add_node("technical", handle_technical)
+graph.add_node("general", handle_general)
+graph.add_node("fallback", fallback)
+
+graph.set_entry_point("classify")
+
+graph.add_conditional_edges(
+    "classify",
+    route_intent,
+    {
+        "billing": "billing",
+        "technical": "technical",
+        "general": "general",
+        "fallback": "fallback"
+    }
+)
+
+graph.add_edge("billing", END)
+graph.add_edge("technical", END)
+graph.add_edge("general", END)
+graph.add_edge("fallback", END)
+
+app = graph.compile()`
+        };
+
+        // DOM elements
+        const codeInput = document.getElementById('codeInput');
+        const visualizeBtn = document.getElementById('visualizeBtn');
+        const exportSelect = document.getElementById('exportSelect');
+        const shareBtn = document.getElementById('shareBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const exampleSelect = document.getElementById('exampleSelect');
+        const loading = document.getElementById('loading');
+        const placeholder = document.getElementById('placeholder');
+        const cytoscapeGraph = document.getElementById('cytoscapeGraph');
+        const graphControls = document.getElementById('graphControls');
+        const insightsPanel = document.getElementById('insightsPanel');
+        const insightsContent = document.getElementById('insightsContent');
+        const apiStatus = document.getElementById('apiStatus');
+        const nodeDetailPanel = document.getElementById('nodeDetailPanel');
+        const nodeDetailTitle = document.getElementById('nodeDetailTitle');
+        const nodeDetailContent = document.getElementById('nodeDetailContent');
+        const closePanelBtn = document.getElementById('closePanelBtn');
+        const fitBtn = document.getElementById('fitBtn');
+        const zoomInBtn = document.getElementById('zoomInBtn');
+        const zoomOutBtn = document.getElementById('zoomOutBtn');
+        const resetLayoutBtn = document.getElementById('resetLayoutBtn');
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
+        const layoutDirBtn = document.getElementById('layoutDirBtn');
+        const legendBtn = document.getElementById('legendBtn');
+        const graphLegend = document.getElementById('graphLegend');
+        const diagramContainer = document.getElementById('diagramContainer');
+        const fullscreenModal = document.getElementById('fullscreenModal');
+        const fullscreenCloseBtn = document.getElementById('fullscreenCloseBtn');
+        const cytoscapeGraphFullscreen = document.getElementById('cytoscapeGraphFullscreen');
+        const fitBtnFs = document.getElementById('fitBtnFs');
+        const zoomInBtnFs = document.getElementById('zoomInBtnFs');
+        const zoomOutBtnFs = document.getElementById('zoomOutBtnFs');
+        const resetLayoutBtnFs = document.getElementById('resetLayoutBtnFs');
+        const layoutDirBtnFs = document.getElementById('layoutDirBtnFs');
+        const mermaidCodePanel = document.getElementById('mermaidCodePanel');
+        const mermaidCodeHeader = document.getElementById('mermaidCodeHeader');
+        const mermaidCodeContent = document.getElementById('mermaidCodeContent');
+        const mermaidCodePre = document.getElementById('mermaidCodePre');
+        const copyMermaidBtn = document.getElementById('copyMermaidBtn');
+
+        // Check API status
+        async function checkApiStatus() {
+            try {
+                const response = await fetch(`${API_URL}/health`);
+                if (response.ok) {
+                    apiStatus.textContent = 'API Online';
+                    apiStatus.className = 'api-status online';
+                    return true;
+                }
+            } catch (error) {
+                apiStatus.textContent = 'API Offline';
+                apiStatus.className = 'api-status offline';
+                return false;
+            }
+            return false;
+        }
+
+        // Convert parsed data to Cytoscape elements
+        function convertToCytoscape(data) {
+            const elements = [];
+            const entryPoint = data.entry_point;
+            const loopResult = findLoopNodes(data);
+            const loopNodes = loopResult.nodes;
+            const conditionalSources = data.conditionals.map(c => c.from);
+            
+            // Calculate in-degree for bottleneck detection (including START)
+            const inDegree = {};
+            data.nodes.forEach(node => inDegree[node] = 0);
+            
+            // Count edge from START to entry point
+            if (entryPoint && inDegree[entryPoint] !== undefined) {
+                inDegree[entryPoint]++;
+            }
+            
+            // Count all regular edges
+            data.edges.forEach(edge => {
+                if (inDegree[edge.to] !== undefined) {
+                    inDegree[edge.to]++;
+                }
+            });
+            
+            // Count all conditional edges
+            data.conditionals.forEach(cond => {
+                Object.values(cond.conditions).forEach(dest => {
+                    if (inDegree[dest] !== undefined) {
+                        inDegree[dest]++;
+                    }
+                });
+            });
+            
+            // Add START pseudo-node
+            elements.push({
+                data: { 
+                    id: 'START', 
+                    label: 'START',
+                    nodeType: 'start'
+                },
+                classes: 'start-node'
+            });
+            
+            // Add all nodes
+            data.nodes.forEach(nodeId => {
+                let nodeType = 'regular';
+                let classes = [];
+                
+                if (nodeId === 'END') {
+                    nodeType = 'end';
+                    classes.push('end-node');
+                } else if (nodeId === entryPoint) {
+                    nodeType = 'entry';
+                    classes.push('entry-node');
+                } else {
+                    classes.push('regular-node');
+                }
+                
+                if (conditionalSources.includes(nodeId)) {
+                    classes.push('conditional-source');
+                }
+                
+                if (loopNodes.includes(nodeId)) {
+                    classes.push('loop-node');
+                }
+                
+                if (inDegree[nodeId] >= 3) {
+                    classes.push('bottleneck-node');
+                }
+                
+                const stateInfo = (data.state_access && data.state_access[nodeId]) || { reads: [], writes: [] };
+                
+                elements.push({
+                    data: { 
+                        id: nodeId, 
+                        label: nodeId,
+                        nodeType: nodeType,
+                        inDegree: inDegree[nodeId] || 0,
+                        isOnLoop: loopNodes.includes(nodeId),
+                        isConditionalSource: conditionalSources.includes(nodeId),
+                        stateReads: stateInfo.reads || [],
+                        stateWrites: stateInfo.writes || []
+                    },
+                    classes: classes.join(' ')
+                });
+            });
+            
+            // Add edge from START to entry point
+            if (entryPoint) {
+                elements.push({
+                    data: {
+                        source: 'START',
+                        target: entryPoint,
+                        label: ''
+                    },
+                    classes: 'regular-edge'
+                });
+            }
+            
+            // Add regular edges
+            data.edges.forEach((edge, idx) => {
+                const isLoopBack = loopNodes.includes(edge.from) && loopNodes.includes(edge.to);
+                elements.push({
+                    data: {
+                        id: `edge-${idx}`,
+                        source: edge.from,
+                        target: edge.to,
+                        label: ''
+                    },
+                    classes: isLoopBack ? 'loop-edge' : 'regular-edge'
+                });
+            });
+            
+            // Add conditional edges
+            data.conditionals.forEach((cond, condIdx) => {
+                Object.entries(cond.conditions).forEach(([label, dest], edgeIdx) => {
+                    const isLoopBack = loopNodes.includes(cond.from) && loopNodes.includes(dest);
+                    elements.push({
+                        data: {
+                            id: `cond-edge-${condIdx}-${edgeIdx}`,
+                            source: cond.from,
+                            target: dest,
+                            label: label
+                        },
+                        classes: isLoopBack ? 'loop-edge conditional-edge' : 'conditional-edge'
+                    });
+                });
+            });
+            
+            return elements;
+        }
+        
+        // Find nodes that are part of loops and return both nodes and cycle paths
+        function findLoopNodes(data) {
+            const loopNodes = [];
+            const cyclePaths = [];
+            
+            if (!data.insights || !data.insights.has_loops) {
+                return { nodes: loopNodes, paths: cyclePaths };
+            }
+            
+            // Build adjacency list
+            const adj = {};
+            data.nodes.forEach(node => adj[node] = []);
+            
+            data.edges.forEach(edge => {
+                if (!adj[edge.from]) adj[edge.from] = [];
+                adj[edge.from].push(edge.to);
+            });
+            
+            data.conditionals.forEach(cond => {
+                if (!adj[cond.from]) adj[cond.from] = [];
+                Object.values(cond.conditions).forEach(dest => {
+                    adj[cond.from].push(dest);
+                });
+            });
+            
+            // DFS to find all cycles
+            const visited = new Set();
+            const recStack = new Set();
+            const cycleNodes = new Set();
+            
+            function dfs(node, path) {
+                if (recStack.has(node)) {
+                    // Found a cycle! Extract the cycle path
+                    const cycleStart = path.indexOf(node);
+                    if (cycleStart !== -1) {
+                        const cyclePath = path.slice(cycleStart);
+                        cyclePath.push(node); // Close the cycle
+                        cyclePaths.push(cyclePath);
+                        
+                        // Mark all nodes in this cycle
+                        cyclePath.forEach(n => cycleNodes.add(n));
+                    }
+                    return;
+                }
+                
+                if (visited.has(node)) {
+                    return;
+                }
+                
+                visited.add(node);
+                recStack.add(node);
+                path.push(node);
+                
+                const neighbors = adj[node] || [];
+                for (const neighbor of neighbors) {
+                    if (neighbor === 'END' || neighbor === 'START') continue;
+                    dfs(neighbor, [...path]);
+                }
+                
+                recStack.delete(node);
+            }
+            
+            // Start DFS from each unvisited node
+            data.nodes.forEach(node => {
+                if (node !== 'END' && node !== 'START' && !visited.has(node)) {
+                    dfs(node, []);
+                }
+            });
+            
+            return { 
+                nodes: Array.from(cycleNodes), 
+                paths: cyclePaths 
+            };
+        }
+
+        // Show node details in side panel
+        function showNodeDetails(node) {
+            const data = node.data();
+            const nodeId = data.id;
+            
+            // Skip START node
+            if (nodeId === 'START') return;
+            
+            // Get incoming and outgoing edges
+            const incomingEdges = cy.edges(`[target = "${nodeId}"]`);
+            const outgoingEdges = cy.edges(`[source = "${nodeId}"]`);
+            
+            // Determine node types (can have multiple)
+            const types = [];
+            if (data.nodeType === 'entry') types.push('Entry Point');
+            if (data.nodeType === 'end') types.push('End Node');
+            if (data.isConditionalSource) types.push('Conditional Source');
+            if (data.inDegree >= 3) types.push('Bottleneck');
+            if (types.length === 0) types.push('Regular Node');
+            
+            // Determine badge class
+            let badgeClass = 'regular';
+            if (data.inDegree >= 3) badgeClass = 'error';
+            else if (data.nodeType === 'entry') badgeClass = 'entry';
+            else if (data.nodeType === 'end') badgeClass = 'end';
+            else if (data.isConditionalSource) badgeClass = 'conditional';
+            
+            // Get incoming source nodes
+            const incomingSources = [];
+            incomingEdges.forEach(edge => {
+                const source = edge.data('source');
+                const label = edge.data('label');
+                if (label) {
+                    incomingSources.push(`${source} [${label}]`);
+                } else {
+                    incomingSources.push(source);
+                }
+            });
+            
+            // Get outgoing target nodes
+            const outgoingTargets = [];
+            outgoingEdges.forEach(edge => {
+                const target = edge.data('target');
+                const label = edge.data('label');
+                if (label) {
+                    outgoingTargets.push(`${target} [${label}]`);
+                } else {
+                    outgoingTargets.push(target);
+                }
+            });
+            
+            // Determine risk level
+            let riskLevel = 'LOW';
+            let riskClass = 'stat-value';
+            if (data.inDegree >= 3 || data.isOnLoop) {
+                riskLevel = 'HIGH';
+                riskClass = 'stat-value error';
+            } else if (data.inDegree >= 2) {
+                riskLevel = 'MEDIUM';
+                riskClass = 'stat-value warning';
+            }
+            
+            // Build detail HTML with the requested format
+            let html = `
+                <div class="node-type-badge ${badgeClass}">${types.join(' + ')}</div>
+                
+                <div class="node-detail-section" style="border-bottom: 2px solid rgba(255,255,255,0.1); padding-bottom: 15px; margin-bottom: 15px;">
+                    <div style="font-size: 1.3em; font-weight: 600; color: #667eea; margin-bottom: 15px;">
+                        ${nodeId}
+                    </div>
+                    
+                    <div style="margin-bottom: 8px;">
+                        <strong style="color: #a0a0a0;">Type:</strong>
+                        <span style="color: #e0e0e0;">${types.join(' + ')}</span>
+                    </div>
+                    
+                    <div style="margin-bottom: 8px;">
+                        <strong style="color: #a0a0a0;">Incoming from:</strong>
+                        <span style="color: #e0e0e0;">${incomingSources.length > 0 ? incomingSources.join(', ') : 'None'}</span>
+                    </div>
+                    
+                    <div style="margin-bottom: 8px;">
+                        <strong style="color: #a0a0a0;">Routes to:</strong>
+                        <span style="color: #e0e0e0;">${outgoingTargets.length > 0 ? outgoingTargets.join(', ') : 'None (dead end)'}</span>
+                    </div>
+                    
+                    <div style="margin-bottom: 8px;">
+                        <strong style="color: #a0a0a0;">On loop:</strong>
+                        <span class="${data.isOnLoop ? 'stat-value warning' : 'stat-value'}">${data.isOnLoop ? 'YES' : 'NO'}</span>
+                    </div>
+                    
+                    <div>
+                        <strong style="color: #a0a0a0;">Risk level:</strong>
+                        <span class="${riskClass}">${riskLevel}</span>
+                        ${data.inDegree > 0 ? `<span style="color: #666; font-size: 0.9em;"> (${data.inDegree} incoming)</span>` : ''}
+                    </div>
+                </div>
+            `;
+            
+            // State Inspector: what state keys this node reads / writes
+            if (nodeId !== 'END') {
+                const reads = data.stateReads || [];
+                const writes = data.stateWrites || [];
+                const chip = (k, kind) => `<span style="display:inline-block; padding:3px 10px; margin:3px 4px 3px 0; border-radius:12px; font-size:0.82em; font-weight:600; background:${kind === 'read' ? 'rgba(59,130,246,0.18)' : 'rgba(16,185,129,0.18)'}; color:${kind === 'read' ? '#60a5fa' : '#34d399'}; border:1px solid ${kind === 'read' ? '#3b82f6' : '#10b981'};">${k}</span>`;
+                
+                html += `
+                    <div class="node-detail-section" style="border-bottom: 2px solid rgba(255,255,255,0.1); padding-bottom: 15px; margin-bottom: 15px;">
+                        <div class="section-title" style="display:flex; align-items:center; gap:6px;">
+                            State Inspector
+                            <span style="font-size:0.75em; color:#666; font-weight:400;">(static analysis)</span>
+                        </div>
+                        <div style="margin-top:10px;">
+                            <div style="font-size:0.85em; color:#a0a0a0; margin-bottom:4px;">↘ Reads (${reads.length})</div>
+                            <div>${reads.length > 0 ? reads.map(k => chip(k, 'read')).join('') : '<span style="color:#666; font-size:0.85em;">No state keys read</span>'}</div>
+                        </div>
+                        <div style="margin-top:12px;">
+                            <div style="font-size:0.85em; color:#a0a0a0; margin-bottom:4px;">↗ Writes (${writes.length})</div>
+                            <div>${writes.length > 0 ? writes.map(k => chip(k, 'write')).join('') : '<span style="color:#666; font-size:0.85em;">No state keys written</span>'}</div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Additional edge details if complex
+            if (incomingEdges.length > 3 || outgoingEdges.length > 3) {
+                html += `
+                    <div class="node-detail-section">
+                        <div class="section-title">Detailed Connections</div>
+                `;
+                
+                if (incomingEdges.length > 0) {
+                    html += `<div style="margin-bottom: 10px;">
+                        <strong style="font-size: 0.9em; color: #a0a0a0;">↓ Incoming (${incomingEdges.length}):</strong>
+                        <ul class="edge-list" style="margin-top: 5px;">
+                    `;
+                    incomingEdges.forEach(edge => {
+                        const source = edge.data('source');
+                        const label = edge.data('label');
+                        html += `<li class="edge-item" style="font-size: 0.85em;">
+                            ${source}${label ? ` <span class="edge-label">[${label}]</span>` : ''}
+                        </li>`;
+                    });
+                    html += `</ul></div>`;
+                }
+                
+                if (outgoingEdges.length > 0) {
+                    html += `<div>
+                        <strong style="font-size: 0.9em; color: #a0a0a0;">↑ Outgoing (${outgoingEdges.length}):</strong>
+                        <ul class="edge-list" style="margin-top: 5px;">
+                    `;
+                    outgoingEdges.forEach(edge => {
+                        const target = edge.data('target');
+                        const label = edge.data('label');
+                        html += `<li class="edge-item" style="font-size: 0.85em;">
+                            ${target}${label ? ` <span class="edge-label">[${label}]</span>` : ''}
+                        </li>`;
+                    });
+                    html += `</ul></div>`;
+                }
+                
+                html += `</div>`;
+            }
+            
+            nodeDetailTitle.textContent = `Node: ${nodeId}`;
+            nodeDetailContent.innerHTML = html;
+            nodeDetailPanel.classList.add('open');
+        }
+        
+        // Display insights
+        function displayInsights(insights) {
+            const data = currentGraphData;
+            const nodes = data.nodes.length;
+            const edges = data.edges.length;
+            const conditionals = data.conditionals.length;
+            const loopResult = findLoopNodes(data);
+            const loops = insights.has_loops ? loopResult.nodes.length : 0;
+            
+            // Calculate complexity score
+            const complexityScore = (nodes * 1) + (edges * 1.5) + (conditionals * 2) + (loops * 3);
+            const minTestCases = Math.max(1, conditionals + loops + 1);
+            
+            let badgesHtml = '<div class="insights-badges">';
+            
+            // Loops badge with details
+            if (insights.has_loops) {
+                const loopResult = findLoopNodes(data);
+                const cyclePaths = loopResult.paths;
+                badgesHtml += `
+                    <div class="insight-badge warning" title="${cyclePaths.length} cycle(s) detected">
+                        <span class="badge-icon">🔄</span>
+                        <span>Contains ${cyclePaths.length} Loop${cyclePaths.length > 1 ? 's' : ''}</span>
+                    </div>
+                `;
+            } else {
+                badgesHtml += `
+                    <div class="insight-badge success">
+                        <span class="badge-icon">✓</span>
+                        <span>No Loops</span>
+                    </div>
+                `;
+            }
+            
+            // Dead ends badge
+            if (insights.dead_ends.length > 0) {
+                badgesHtml += `
+                    <div class="insight-badge error" title="Nodes with no outgoing edges">
+                        <span class="badge-icon">⚠</span>
+                        <span>${insights.dead_ends.length} Dead End${insights.dead_ends.length > 1 ? 's' : ''}</span>
+                    </div>
+                `;
+            } else {
+                badgesHtml += `
+                    <div class="insight-badge success">
+                        <span class="badge-icon">✓</span>
+                        <span>No Dead Ends</span>
+                    </div>
+                `;
+            }
+            
+            // Bottlenecks badge with incoming edge counts
+            if (insights.bottlenecks.length > 0) {
+                // Calculate in-degree for bottleneck nodes
+                const bottleneckDetails = insights.bottlenecks.map(nodeName => {
+                    // Count incoming edges for this node
+                    let count = 0;
+                    
+                    // From START
+                    if (nodeName === data.entry_point) count++;
+                    
+                    // From regular edges
+                    data.edges.forEach(edge => {
+                        if (edge.to === nodeName) count++;
+                    });
+                    
+                    // From conditional edges
+                    data.conditionals.forEach(cond => {
+                        Object.values(cond.conditions).forEach(dest => {
+                            if (dest === nodeName) count++;
+                        });
+                    });
+                    
+                    return { node: nodeName, count };
+                }).sort((a, b) => b.count - a.count);
+                
+                const topBottleneck = bottleneckDetails[0];
+                badgesHtml += `
+                    <div class="insight-badge warning" title="Nodes with 3+ incoming edges">
+                        <span class="badge-icon">🔀</span>
+                        <span>⚠ Bottleneck: ${topBottleneck.node} (${topBottleneck.count} incoming)</span>
+                    </div>
+                `;
+            } else {
+                badgesHtml += `
+                    <div class="insight-badge success">
+                        <span class="badge-icon">✓</span>
+                        <span>No Bottlenecks</span>
+                    </div>
+                `;
+            }
+            
+            // Complexity badge
+            const complexityClass = 
+                insights.complexity_score === 'LOW' ? 'success' : 
+                insights.complexity_score === 'MEDIUM' ? 'warning' : 'error';
+            const complexityIcon = 
+                insights.complexity_score === 'LOW' ? '📊' : 
+                insights.complexity_score === 'MEDIUM' ? '📈' : '📉';
+            badgesHtml += `
+                <div class="insight-badge ${complexityClass}" title="Complexity formula: (nodes × 1) + (edges × 1.5) + (conditionals × 2) + (loops × 3)">
+                    <span class="badge-icon">${complexityIcon}</span>
+                    <span>Complexity: ${insights.complexity_score}</span>
+                </div>
+            `;
+            
+            badgesHtml += '</div>';
+            
+            // Detailed breakdown
+            let detailsHtml = '<div class="insight-details">';
+            
+            // Complexity breakdown
+            detailsHtml += `
+                <div class="insight-item">
+                    <div class="insight-label">Complexity Breakdown</div>
+                    <div class="insight-value">${nodes} nodes + ${edges} edges + ${conditionals} conditionals${loops > 0 ? ` + ${loops} loop nodes` : ''} = ${complexityScore.toFixed(1)} → ${insights.complexity_score}</div>
+                    <div style="margin-top: 5px; font-size: 0.9em; color: #a0a0a0;">
+                        Min. test cases for full coverage: ${minTestCases}
+                    </div>
+                </div>
+            `;
+            
+            // Loop details
+            if (insights.has_loops) {
+                const loopResult = findLoopNodes(data);
+                const cyclePaths = loopResult.paths;
+                
+                if (cyclePaths.length > 0) {
+                    detailsHtml += `
+                        <div class="insight-item">
+                            <div class="insight-label">Loop Paths (${cyclePaths.length} detected)</div>
+                            <div class="insight-value warning">
+                    `;
+                    
+                    cyclePaths.forEach((cycle, idx) => {
+                        detailsHtml += cycle.join(' → ');
+                        if (idx < cyclePaths.length - 1) {
+                            detailsHtml += '<br>';
+                        }
+                    });
+                    
+                    detailsHtml += `
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+            
+            // Dead ends detail
+            if (insights.dead_ends.length > 0) {
+                detailsHtml += `
+                    <div class="insight-item">
+                        <div class="insight-label">Dead End Nodes</div>
+                        <div class="insight-value error">${insights.dead_ends.join(', ')}</div>
+                        <div style="margin-top: 5px; font-size: 0.9em; color: #a0a0a0;">
+                            These nodes have no outgoing edges and are not END
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Bottlenecks detail with incoming counts
+            if (insights.bottlenecks.length > 0) {
+                const bottleneckDetails = insights.bottlenecks.map(nodeName => {
+                    // Count incoming edges for this node
+                    let count = 0;
+                    const sources = [];
+                    
+                    // From START
+                    if (nodeName === data.entry_point) {
+                        count++;
+                        sources.push('START');
+                    }
+                    
+                    // From regular edges
+                    data.edges.forEach(edge => {
+                        if (edge.to === nodeName) {
+                            count++;
+                            sources.push(edge.from);
+                        }
+                    });
+                    
+                    // From conditional edges
+                    data.conditionals.forEach(cond => {
+                        Object.values(cond.conditions).forEach(dest => {
+                            if (dest === nodeName) {
+                                count++;
+                                sources.push(cond.from);
+                            }
+                        });
+                    });
+                    
+                    return { node: nodeName, count, sources: [...new Set(sources)] };
+                }).sort((a, b) => b.count - a.count);
+                
+                detailsHtml += `
+                    <div class="insight-item">
+                        <div class="insight-label">Bottleneck Nodes (3+ incoming edges)</div>
+                `;
+                
+                bottleneckDetails.forEach(detail => {
+                    detailsHtml += `
+                        <div style="margin-top: 8px;">
+                            <div class="insight-value warning">
+                                ${detail.node}: ${detail.count} incoming edges
+                            </div>
+                            <div style="margin-top: 3px; font-size: 0.85em; color: #a0a0a0;">
+                                From: ${detail.sources.join(', ')}
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                detailsHtml += `
+                    </div>
+                `;
+            }
+            
+            detailsHtml += '</div>';
+            
+            insightsContent.innerHTML = badgesHtml + detailsHtml;
+            insightsPanel.style.display = 'block';
+        }
+        
+        // Display Mermaid code
+        function displayMermaidCode(data) {
+            let mermaid = 'flowchart TD\n';
+            const entryPoint = data.entry_point;
+            
+            // Add START node
+            if (entryPoint) {
+                mermaid += `    START([START]) --> ${entryPoint}\n`;
+            }
+            
+            // Add regular edges
+            data.edges.forEach(edge => {
+                const from = edge.from;
+                const to = edge.to;
+                if (to === 'END') {
+                    mermaid += `    ${from} --> END([END])\n`;
+                } else {
+                    mermaid += `    ${from} --> ${to}\n`;
+                }
+            });
+            
+            // Add conditional edges
+            data.conditionals.forEach(cond => {
+                Object.entries(cond.conditions).forEach(([label, dest]) => {
+                    if (dest === 'END') {
+                        mermaid += `    ${cond.from} -->|${label}| END([END])\n`;
+                    } else {
+                        mermaid += `    ${cond.from} -->|${label}| ${dest}\n`;
+                    }
+                });
+            });
+            
+            // Add styling
+            mermaid += '\n    classDef startNode fill:#22c55e,stroke:#16a34a,stroke-width:2px\n';
+            mermaid += '    classDef endNode fill:#ef4444,stroke:#dc2626,stroke-width:2px\n';
+            mermaid += '    class START startNode\n';
+            mermaid += '    class END endNode\n';
+            
+            mermaidCodePre.textContent = mermaid;
+            mermaidCodePanel.style.display = 'block';
+        }
+
+        // Initialize Cytoscape with styling
+        function initializeCytoscape(elements) {
+            // Destroy existing instance
+            if (cy) {
+                cy.destroy();
+            }
+            
+            cy = cytoscape({
+                container: cytoscapeGraph,
+                elements: elements,
+                style: [
+                    {
+                        selector: 'node',
+                        style: {
+                            'label': 'data(label)',
+                            'text-valign': 'center',
+                            'text-halign': 'center',
+                            'background-color': '#475569',
+                            'background-gradient-stop-colors': '#475569 #334155',
+                            'background-gradient-direction': 'to-bottom',
+                            'color': '#ffffff',
+                            'font-size': '14px',
+                            'font-weight': '600',
+                            'font-family': 'Segoe UI, Arial, sans-serif',
+                            'shape': 'roundrectangle',
+                            'width': 'label',
+                            'height': 'label',
+                            'padding': '18px',
+                            'border-width': 2,
+                            'border-color': '#64748b',
+                            'text-wrap': 'wrap',
+                            'text-max-width': '120px',
+                            'transition-property': 'background-color, border-color, border-width',
+                            'transition-duration': '0.2s'
+                        }
+                    },
+                    {
+                        selector: '.start-node',
+                        style: {
+                            'background-color': '#10b981',
+                            'background-gradient-stop-colors': '#10b981 #059669',
+                            'background-gradient-direction': 'to-bottom',
+                            'border-color': '#059669',
+                            'border-width': 3,
+                            'shape': 'ellipse',
+                            'padding': '20px',
+                            'font-size': '15px',
+                            'font-weight': 'bold'
+                        }
+                    },
+                    {
+                        selector: '.end-node',
+                        style: {
+                            'background-color': '#ef4444',
+                            'background-gradient-stop-colors': '#ef4444 #dc2626',
+                            'background-gradient-direction': 'to-bottom',
+                            'border-color': '#dc2626',
+                            'border-width': 3,
+                            'shape': 'ellipse',
+                            'padding': '20px',
+                            'font-size': '15px',
+                            'font-weight': 'bold'
+                        }
+                    },
+                    {
+                        selector: '.entry-node',
+                        style: {
+                            'background-color': '#3b82f6',
+                            'background-gradient-stop-colors': '#3b82f6 #2563eb',
+                            'background-gradient-direction': 'to-bottom',
+                            'border-color': '#2563eb',
+                            'border-width': 3,
+                            'padding': '16px',
+                            'font-size': '14px'
+                        }
+                    },
+                    {
+                        selector: '.conditional-source',
+                        style: {
+                            'background-color': '#f97316',
+                            'background-gradient-stop-colors': '#f97316 #ea580c',
+                            'background-gradient-direction': 'to-bottom',
+                            'border-color': '#ea580c',
+                            'border-width': 3,
+                            'shape': 'diamond',
+                            'padding': '20px'
+                        }
+                    },
+                    {
+                        selector: '.loop-node',
+                        style: {
+                            'background-color': '#eab308',
+                            'background-gradient-stop-colors': '#eab308 #ca8a04',
+                            'background-gradient-direction': 'to-bottom',
+                            'border-color': '#ca8a04',
+                            'border-width': 3,
+                            'border-style': 'double'
+                        }
+                    },
+                    {
+                        selector: '.bottleneck-node',
+                        style: {
+                            'background-color': '#dc2626',
+                            'background-gradient-stop-colors': '#dc2626 #991b1b',
+                            'background-gradient-direction': 'to-bottom',
+                            'border-color': '#991b1b',
+                            'border-width': 4,
+                            'shape': 'octagon',
+                            'padding': '16px'
+                        }
+                    },
+                    {
+                        selector: 'edge',
+                        style: {
+                            'width': 3,
+                            'line-color': '#64748b',
+                            'target-arrow-color': '#64748b',
+                            'target-arrow-shape': 'triangle',
+                            'curve-style': 'bezier',
+                            'arrow-scale': 1.8,
+                            'line-style': 'solid',
+                            'line-cap': 'round',
+                            'control-point-step-size': 80,
+                            'opacity': 0.85,
+                            'transition-property': 'line-color, target-arrow-color, width',
+                            'transition-duration': '0.2s'
+                        }
+                    },
+                    {
+                        selector: '.conditional-edge',
+                        style: {
+                            'label': 'data(label)',
+                            'font-size': '12px',
+                            'font-weight': 'bold',
+                            'color': '#ffffff',
+                            'text-background-color': '#f97316',
+                            'text-background-opacity': 1,
+                            'text-background-padding': '6px',
+                            'text-border-width': 2,
+                            'text-border-color': '#ea580c',
+                            'text-border-opacity': 1,
+                            'text-background-shape': 'roundrectangle',
+                            'text-margin-y': -15,
+                            'line-color': '#f97316',
+                            'target-arrow-color': '#f97316',
+                            'curve-style': 'bezier',
+                            'control-point-step-size': 80,
+                            'width': 3.5,
+                            'opacity': 0.95
+                        }
+                    },
+                    {
+                        selector: '.loop-edge',
+                        style: {
+                            'line-color': '#eab308',
+                            'target-arrow-color': '#eab308',
+                            'line-style': 'dashed',
+                            'width': 3,
+                            'line-dash-pattern': [10, 5],
+                            'opacity': 0.9
+                        }
+                    },
+                    {
+                        selector: 'node:selected',
+                        style: {
+                            'background-color': '#8b5cf6',
+                            'background-gradient-stop-colors': '#8b5cf6 #7c3aed',
+                            'border-color': '#6d28d9',
+                            'border-width': 5,
+                            'overlay-color': '#8b5cf6',
+                            'overlay-opacity': 0.2,
+                            'overlay-padding': 8
+                        }
+                    },
+                    {
+                        selector: 'edge:selected',
+                        style: {
+                            'line-color': '#8b5cf6',
+                            'target-arrow-color': '#8b5cf6',
+                            'width': 4,
+                            'opacity': 1
+                        }
+                    },
+                    {
+                        selector: 'node:active',
+                        style: {
+                            'overlay-opacity': 0.3
+                        }
+                    }
+                ],
+                layout: {
+                    name: 'dagre',
+                    rankDir: currentLayoutDir,
+                    nodeSep: 120,
+                    rankSep: 150,
+                    padding: 80,
+                    ranker: 'network-simplex',
+                    animate: true,
+                    animationDuration: 500,
+                    animationEasing: 'ease-out'
+                },
+                minZoom: 0.2,
+                maxZoom: 4,
+                wheelSensitivity: 0.15,
+                pixelRatio: 2
+            });
+            
+            // Add node click handler
+            cy.on('tap', 'node', function(evt) {
+                const node = evt.target;
+                showNodeDetails(node);
+            });
+            
+            // Add hover effects for nodes
+            cy.on('mouseover', 'node', function(evt) {
+                const node = evt.target;
+                node.style({
+                    'border-width': '5',
+                    'overlay-opacity': 0.15,
+                    'overlay-color': '#8b5cf6',
+                    'overlay-padding': 6
+                });
+                document.body.style.cursor = 'pointer';
+            });
+            
+            cy.on('mouseout', 'node', function(evt) {
+                const node = evt.target;
+                if (!node.selected()) {
+                    node.style({
+                        'border-width': node.hasClass('bottleneck-node') ? '4' : 
+                                       (node.hasClass('start-node') || node.hasClass('end-node') || node.hasClass('entry-node') || 
+                                        node.hasClass('conditional-source') || node.hasClass('loop-node')) ? '3' : '2',
+                        'overlay-opacity': 0,
+                        'overlay-padding': 0
+                    });
+                }
+                document.body.style.cursor = 'default';
+            });
+            
+            // Add hover effects for edges
+            cy.on('mouseover', 'edge', function(evt) {
+                const edge = evt.target;
+                edge.style({
+                    'width': edge.hasClass('conditional-edge') ? '4.5' : '4',
+                    'opacity': 1
+                });
+                document.body.style.cursor = 'pointer';
+            });
+            
+            cy.on('mouseout', 'edge', function(evt) {
+                const edge = evt.target;
+                if (!edge.selected()) {
+                    edge.style({
+                        'width': edge.hasClass('conditional-edge') ? '3.5' : edge.hasClass('loop-edge') ? '3' : '3',
+                        'opacity': edge.hasClass('conditional-edge') ? 0.95 : edge.hasClass('loop-edge') ? 0.9 : 0.85
+                    });
+                }
+                document.body.style.cursor = 'default';
+            });
+            
+            // Fit to screen initially with proper padding
+            setTimeout(() => {
+                cy.resize();
+                cy.fit(60);
+                cy.center();
+            }, 200);
+            
+            return cy;
+        }
+        
+        // Visualize graph
+        async function visualizeGraph() {
+            const code = codeInput.value.trim();
+            
+            if (!code) {
+                alert('Please enter some LangGraph code first!');
+                return;
+            }
+            
+            // Check API status
+            const apiOnline = await checkApiStatus();
+            if (!apiOnline) {
+                alert('API is offline. Please start the backend server:\n\ncd backend\npython main.py');
+                return;
+            }
+            
+            // Show loading
+            loading.classList.add('active');
+            placeholder.style.display = 'none';
+            cytoscapeGraph.style.display = 'block';
+            insightsPanel.style.display = 'none';
+            nodeDetailPanel.classList.remove('open');
+            
+            try {
+                const response = await fetch(`${API_URL}/parse`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ code })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to parse code');
+                }
+                
+                const data = await response.json();
+                currentGraphData = data;
+                
+                // Convert to Cytoscape format
+                const elements = convertToCytoscape(data);
+                currentElements = elements; // Store for fullscreen
+                
+                // Initialize Cytoscape
+                initializeCytoscape(elements);
+                
+                // Display insights
+                displayInsights(data.insights);
+                
+                // Display Mermaid code
+                displayMermaidCode(data);
+                
+                // Show controls
+                graphControls.style.display = 'flex';
+                graphLegend.style.display = 'block';
+                legendBtn.classList.add('active');
+                
+                // Enable export dropdown and share button
+                exportSelect.disabled = false;
+                shareBtn.disabled = false;
+                
+            } catch (error) {
+                console.error('Error:', error);
+                cytoscapeGraph.innerHTML = `<div class="status error">${error.message}</div>`;
+            } finally {
+                loading.classList.remove('active');
+            }
+        }
+
+        // Export as PNG
+        function exportPNG() {
+            if (!cy) return;
+            
+            const png = cy.png({
+                output: 'blob',
+                bg: '#2d2d44',
+                full: true,
+                scale: 2
+            });
+            
+            const link = document.createElement('a');
+            link.download = 'langgraph-diagram.png';
+            link.href = URL.createObjectURL(png);
+            link.click();
+        }
+        
+        // Export as SVG
+        function exportSVG() {
+            if (!cy) return;
+            
+            const svgContent = cy.svg({ scale: 1, full: true, bg: '#2d2d44' });
+            const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+            
+            const link = document.createElement('a');
+            link.download = 'langgraph-diagram.svg';
+            link.href = URL.createObjectURL(blob);
+            link.click();
+        }
+        
+        // Export Mermaid code
+        function exportMermaid() {
+            if (!currentGraphData) return;
+            
+            let mermaid = 'flowchart TD\n';
+            const data = currentGraphData;
+            const entryPoint = data.entry_point;
+            
+            // Add START node
+            if (entryPoint) {
+                mermaid += `    START([START]) --> ${entryPoint}\n`;
+            }
+            
+            // Add regular edges
+            data.edges.forEach(edge => {
+                const from = edge.from;
+                const to = edge.to;
+                if (to === 'END') {
+                    mermaid += `    ${from} --> END([END])\n`;
+                } else {
+                    mermaid += `    ${from} --> ${to}\n`;
+                }
+            });
+            
+            // Add conditional edges
+            data.conditionals.forEach(cond => {
+                Object.entries(cond.conditions).forEach(([label, dest]) => {
+                    if (dest === 'END') {
+                        mermaid += `    ${cond.from} -->|${label}| END([END])\n`;
+                    } else {
+                        mermaid += `    ${cond.from} -->|${label}| ${dest}\n`;
+                    }
+                });
+            });
+            
+            // Add styling
+            mermaid += '\n    classDef startNode fill:#22c55e,stroke:#16a34a,stroke-width:2px\n';
+            mermaid += '    classDef endNode fill:#ef4444,stroke:#dc2626,stroke-width:2px\n';
+            mermaid += '    class START startNode\n';
+            mermaid += '    class END endNode\n';
+            
+            // Copy to clipboard and download
+            navigator.clipboard.writeText(mermaid).then(() => {
+                alert('Mermaid code copied to clipboard!');
+            });
+            
+            const blob = new Blob([mermaid], { type: 'text/plain' });
+            const link = document.createElement('a');
+            link.download = 'langgraph-diagram.mmd';
+            link.href = URL.createObjectURL(blob);
+            link.click();
+        }
+        
+        // Export JSON
+        function exportJSON() {
+            if (!currentGraphData) return;
+            
+            const json = JSON.stringify(currentGraphData, null, 2);
+            
+            // Copy to clipboard and download
+            navigator.clipboard.writeText(json).then(() => {
+                alert('JSON data copied to clipboard!');
+            });
+            
+            const blob = new Blob([json], { type: 'application/json' });
+            const link = document.createElement('a');
+            link.download = 'langgraph-data.json';
+            link.href = URL.createObjectURL(blob);
+            link.click();
+        }
+        
+        // Handle export selection
+        function handleExport(format) {
+            switch(format) {
+                case 'png':
+                    exportPNG();
+                    break;
+                case 'svg':
+                    exportSVG();
+                    break;
+                case 'mermaid':
+                    exportMermaid();
+                    break;
+                case 'json':
+                    exportJSON();
+                    break;
+            }
+        }
+        
+        // Shareable URL
+        function generateShareURL() {
+            const code = codeInput.value.trim();
+            if (!code) return;
+            
+            // Encode code as base64
+            const encoded = btoa(unescape(encodeURIComponent(code)));
+            const shareURL = `${window.location.origin}${window.location.pathname}?graph=${encoded}`;
+            
+            // Copy to clipboard
+            navigator.clipboard.writeText(shareURL).then(() => {
+                alert('Share link copied to clipboard!\n\nAnyone with this link can view your graph.');
+            }).catch(err => {
+                // Fallback: show in prompt
+                prompt('Copy this share link:', shareURL);
+            });
+        }
+        
+        // Load graph from URL parameter
+        function loadFromURL() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const graphParam = urlParams.get('graph');
+            
+            if (graphParam) {
+                try {
+                    // Decode base64
+                    const decoded = decodeURIComponent(escape(atob(graphParam)));
+                    codeInput.value = decoded;
+                    
+                    // Auto-visualize after a short delay
+                    setTimeout(() => {
+                        visualizeGraph();
+                    }, 500);
+                } catch (err) {
+                    console.error('Failed to load graph from URL:', err);
+                    alert('Invalid share link');
+                }
+            }
+        }
+        
+        // Zoom controls
+        function zoomIn() {
+            if (cy) {
+                cy.zoom(cy.zoom() * 1.2);
+                cy.center();
+            }
+        }
+        
+        function zoomOut() {
+            if (cy) {
+                cy.zoom(cy.zoom() * 0.8);
+                cy.center();
+            }
+        }
+        
+        function fitToScreen() {
+            if (cy) {
+                cy.fit(50);
+            }
+        }
+        
+        function resetLayout() {
+            if (cy) {
+                cy.layout({
+                    name: 'dagre',
+                    rankDir: currentLayoutDir,
+                    nodeSep: 100,
+                    rankSep: 120,
+                    padding: 60
+                }).run();
+                setTimeout(() => cy.fit(60), 100);
+            }
+        }
+
+        // Toggle vertical (TB) <-> horizontal (LR) layout for the main view
+        function toggleLayoutDirection() {
+            currentLayoutDir = currentLayoutDir === 'TB' ? 'LR' : 'TB';
+            layoutDirBtn.textContent = currentLayoutDir === 'TB' ? '⇄ Horizontal' : '⇅ Vertical';
+            if (cy) {
+                cy.layout({
+                    name: 'dagre',
+                    rankDir: currentLayoutDir,
+                    nodeSep: 120,
+                    rankSep: 150,
+                    padding: 80,
+                    ranker: 'network-simplex',
+                    animate: true,
+                    animationDuration: 400,
+                    animationEasing: 'ease-out'
+                }).run();
+                setTimeout(() => { cy.fit(60); cy.center(); }, 450);
+            }
+        }
+
+        // Toggle the legend overlay on the main view
+        function toggleLegend() {
+            const visible = graphLegend.style.display !== 'none';
+            graphLegend.style.display = visible ? 'none' : 'block';
+            legendBtn.classList.toggle('active', !visible);
+        }
+        
+        // Fullscreen modal toggle
+        function toggleFullscreen() {
+            if (!currentElements) return;
+            
+            if (fullscreenModal.classList.contains('active')) {
+                // Exit fullscreen
+                fullscreenModal.classList.remove('active');
+                if (cyFullscreen) {
+                    cyFullscreen.destroy();
+                    cyFullscreen = null;
+                }
+            } else {
+                // Enter fullscreen
+                fullscreenModal.classList.add('active');
+                
+                // Match the main view's current layout direction
+                fsLayoutDir = currentLayoutDir;
+                layoutDirBtnFs.textContent = fsLayoutDir === 'TB' ? '⇄ Horizontal' : '⇅ Vertical';
+                
+                // Initialize Cytoscape in fullscreen container
+                setTimeout(() => {
+                    cyFullscreen = cytoscape({
+                        container: cytoscapeGraphFullscreen,
+                        elements: currentElements,
+                        style: getCytoscapeStyle(),
+                        layout: {
+                            name: 'dagre',
+                            rankDir: fsLayoutDir,
+                            nodeSep: 120,
+                            rankSep: 150,
+                            padding: 80
+                        },
+                        minZoom: 0.2,
+                        maxZoom: 4,
+                        wheelSensitivity: 0.15,
+                        pixelRatio: 2
+                    });
+                    
+                    // Add node click handler
+                    cyFullscreen.on('tap', 'node', function(evt) {
+                        const node = evt.target;
+                        showNodeDetails(node);
+                    });
+                    
+                    // Add hover effects for nodes
+                    cyFullscreen.on('mouseover', 'node', function(evt) {
+                        const node = evt.target;
+                        node.style({
+                            'border-width': '5',
+                            'overlay-opacity': 0.15,
+                            'overlay-color': '#8b5cf6',
+                            'overlay-padding': 6
+                        });
+                        document.body.style.cursor = 'pointer';
+                    });
+                    
+                    cyFullscreen.on('mouseout', 'node', function(evt) {
+                        const node = evt.target;
+                        if (!node.selected()) {
+                            node.style({
+                                'border-width': node.hasClass('bottleneck-node') ? '4' : 
+                                               (node.hasClass('start-node') || node.hasClass('end-node') || node.hasClass('entry-node') || 
+                                                node.hasClass('conditional-source') || node.hasClass('loop-node')) ? '3' : '2',
+                                'overlay-opacity': 0,
+                                'overlay-padding': 0
+                            });
+                        }
+                        document.body.style.cursor = 'default';
+                    });
+                    
+                    // Add hover effects for edges
+                    cyFullscreen.on('mouseover', 'edge', function(evt) {
+                        const edge = evt.target;
+                        edge.style({
+                            'width': edge.hasClass('conditional-edge') ? '4.5' : '4',
+                            'opacity': 1
+                        });
+                        document.body.style.cursor = 'pointer';
+                    });
+                    
+                    cyFullscreen.on('mouseout', 'edge', function(evt) {
+                        const edge = evt.target;
+                        if (!edge.selected()) {
+                            edge.style({
+                                'width': edge.hasClass('conditional-edge') ? '3.5' : edge.hasClass('loop-edge') ? '3' : '3',
+                                'opacity': edge.hasClass('conditional-edge') ? 0.95 : edge.hasClass('loop-edge') ? 0.9 : 0.85
+                            });
+                        }
+                        document.body.style.cursor = 'default';
+                    });
+                    
+                    // Fit with padding
+                    setTimeout(() => {
+                        cyFullscreen.fit(80);
+                        cyFullscreen.center();
+                    }, 100);
+                }, 100);
+            }
+        }
+        
+        // Get Cytoscape style configuration
+        function getCytoscapeStyle() {
+            return [
+                {
+                    selector: 'node',
+                    style: {
+                        'label': 'data(label)',
+                        'text-valign': 'center',
+                        'text-halign': 'center',
+                        'background-color': '#475569',
+                        'background-gradient-stop-colors': '#475569 #334155',
+                        'background-gradient-direction': 'to-bottom',
+                        'color': '#ffffff',
+                        'font-size': '14px',
+                        'font-weight': '600',
+                        'font-family': 'Segoe UI, Arial, sans-serif',
+                        'shape': 'roundrectangle',
+                        'width': 'label',
+                        'height': 'label',
+                        'padding': '18px',
+                        'border-width': 2,
+                        'border-color': '#64748b',
+                        'text-wrap': 'wrap',
+                        'text-max-width': '120px',
+                        'transition-property': 'background-color, border-color, border-width',
+                        'transition-duration': '0.2s'
+                    }
+                },
+                {
+                    selector: '.start-node',
+                    style: {
+                        'background-color': '#10b981',
+                        'background-gradient-stop-colors': '#10b981 #059669',
+                        'background-gradient-direction': 'to-bottom',
+                        'border-color': '#059669',
+                        'border-width': 3,
+                        'shape': 'ellipse',
+                        'padding': '20px',
+                        'font-size': '15px',
+                        'font-weight': 'bold'
+                    }
+                },
+                {
+                    selector: '.end-node',
+                    style: {
+                        'background-color': '#ef4444',
+                        'background-gradient-stop-colors': '#ef4444 #dc2626',
+                        'background-gradient-direction': 'to-bottom',
+                        'border-color': '#dc2626',
+                        'border-width': 3,
+                        'shape': 'ellipse',
+                        'padding': '20px',
+                        'font-size': '15px',
+                        'font-weight': 'bold'
+                    }
+                },
+                {
+                    selector: '.entry-node',
+                    style: {
+                        'background-color': '#3b82f6',
+                        'background-gradient-stop-colors': '#3b82f6 #2563eb',
+                        'background-gradient-direction': 'to-bottom',
+                        'border-color': '#2563eb',
+                        'border-width': 3,
+                        'padding': '16px',
+                        'font-size': '14px'
+                    }
+                },
+                {
+                    selector: '.conditional-source',
+                    style: {
+                        'background-color': '#f97316',
+                        'background-gradient-stop-colors': '#f97316 #ea580c',
+                        'background-gradient-direction': 'to-bottom',
+                        'border-color': '#ea580c',
+                        'border-width': 3,
+                        'shape': 'diamond',
+                        'padding': '20px'
+                    }
+                },
+                {
+                    selector: '.loop-node',
+                    style: {
+                        'background-color': '#eab308',
+                        'background-gradient-stop-colors': '#eab308 #ca8a04',
+                        'background-gradient-direction': 'to-bottom',
+                        'border-color': '#ca8a04',
+                        'border-width': 3,
+                        'border-style': 'double'
+                    }
+                },
+                {
+                    selector: '.bottleneck-node',
+                    style: {
+                        'background-color': '#dc2626',
+                        'background-gradient-stop-colors': '#dc2626 #991b1b',
+                        'background-gradient-direction': 'to-bottom',
+                        'border-color': '#991b1b',
+                        'border-width': 4,
+                        'shape': 'octagon',
+                        'padding': '16px'
+                    }
+                },
+                {
+                    selector: 'edge',
+                    style: {
+                        'width': 3,
+                        'line-color': '#64748b',
+                        'target-arrow-color': '#64748b',
+                        'target-arrow-shape': 'triangle',
+                        'curve-style': 'bezier',
+                        'arrow-scale': 1.8,
+                        'line-style': 'solid',
+                        'line-cap': 'round',
+                        'control-point-step-size': 80,
+                        'opacity': 0.85,
+                        'transition-property': 'line-color, target-arrow-color, width',
+                        'transition-duration': '0.2s'
+                    }
+                },
+                {
+                    selector: '.conditional-edge',
+                    style: {
+                        'label': 'data(label)',
+                        'font-size': '12px',
+                        'font-weight': 'bold',
+                        'color': '#ffffff',
+                        'text-background-color': '#f97316',
+                        'text-background-opacity': 1,
+                        'text-background-padding': '6px',
+                        'text-border-width': 2,
+                        'text-border-color': '#ea580c',
+                        'text-border-opacity': 1,
+                        'text-background-shape': 'roundrectangle',
+                        'text-margin-y': -15,
+                        'line-color': '#f97316',
+                        'target-arrow-color': '#f97316',
+                        'curve-style': 'bezier',
+                        'control-point-step-size': 80,
+                        'width': 3.5,
+                        'opacity': 0.95
+                    }
+                },
+                {
+                    selector: '.loop-edge',
+                    style: {
+                        'line-color': '#eab308',
+                        'target-arrow-color': '#eab308',
+                        'line-style': 'dashed',
+                        'width': 3,
+                        'line-dash-pattern': [10, 5],
+                        'opacity': 0.9
+                    }
+                },
+                {
+                    selector: 'node:selected',
+                    style: {
+                        'background-color': '#8b5cf6',
+                        'background-gradient-stop-colors': '#8b5cf6 #7c3aed',
+                        'border-color': '#6d28d9',
+                        'border-width': 5,
+                        'overlay-color': '#8b5cf6',
+                        'overlay-opacity': 0.2,
+                        'overlay-padding': 8
+                    }
+                },
+                {
+                    selector: 'edge:selected',
+                    style: {
+                        'line-color': '#8b5cf6',
+                        'target-arrow-color': '#8b5cf6',
+                        'width': 4,
+                        'opacity': 1
+                    }
+                },
+                {
+                    selector: 'node:active',
+                    style: {
+                        'overlay-opacity': 0.3
+                    }
+                }
+            ];
+        }
+        
+        // Fullscreen control functions
+        function zoomInFs() {
+            if (cyFullscreen) {
+                cyFullscreen.zoom(cyFullscreen.zoom() * 1.2);
+                cyFullscreen.center();
+            }
+        }
+        
+        function zoomOutFs() {
+            if (cyFullscreen) {
+                cyFullscreen.zoom(cyFullscreen.zoom() * 0.8);
+                cyFullscreen.center();
+            }
+        }
+        
+        function fitToScreenFs() {
+            if (cyFullscreen) {
+                cyFullscreen.fit(80);
+            }
+        }
+        
+        function resetLayoutFs() {
+            if (cyFullscreen) {
+                cyFullscreen.layout({
+                    name: 'dagre',
+                    rankDir: fsLayoutDir,
+                    nodeSep: 120,
+                    rankSep: 150,
+                    padding: 80,
+                    ranker: 'network-simplex',
+                    animate: true,
+                    animationDuration: 500,
+                    animationEasing: 'ease-out'
+                }).run();
+                setTimeout(() => cyFullscreen.fit(80), 600);
+            }
+        }
+
+        // Toggle vertical <-> horizontal layout in fullscreen
+        function toggleLayoutDirectionFs() {
+            fsLayoutDir = fsLayoutDir === 'TB' ? 'LR' : 'TB';
+            layoutDirBtnFs.textContent = fsLayoutDir === 'TB' ? '⇄ Horizontal' : '⇅ Vertical';
+            if (cyFullscreen) {
+                cyFullscreen.layout({
+                    name: 'dagre',
+                    rankDir: fsLayoutDir,
+                    nodeSep: 120,
+                    rankSep: 150,
+                    padding: 80,
+                    ranker: 'network-simplex',
+                    animate: true,
+                    animationDuration: 400,
+                    animationEasing: 'ease-out'
+                }).run();
+                setTimeout(() => { cyFullscreen.fit(80); cyFullscreen.center(); }, 450);
+            }
+        }
+        
+        // Exit fullscreen on Escape
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && fullscreenModal.classList.contains('active')) {
+                toggleFullscreen();
+            }
+        });
+
+        // Event listeners
+        visualizeBtn.addEventListener('click', visualizeGraph);
+        exportSelect.addEventListener('change', (e) => {
+            const format = e.target.value;
+            if (format) {
+                handleExport(format);
+                e.target.value = '';
+            }
+        });
+        
+        shareBtn.addEventListener('click', generateShareURL);
+        
+        clearBtn.addEventListener('click', () => {
+            codeInput.value = '';
+            if (cy) {
+                cy.destroy();
+                cy = null;
+            }
+            cytoscapeGraph.style.display = 'none';
+            placeholder.style.display = 'block';
+            insightsPanel.style.display = 'none';
+            mermaidCodePanel.style.display = 'none';
+            graphControls.style.display = 'none';
+            graphLegend.style.display = 'none';
+            nodeDetailPanel.classList.remove('open');
+            exportSelect.disabled = true;
+            shareBtn.disabled = true;
+            currentGraphData = null;
+            currentElements = null;
+            
+            // Close fullscreen if open
+            if (fullscreenModal.classList.contains('active')) {
+                toggleFullscreen();
+            }
+        });
+        
+        exampleSelect.addEventListener('change', (e) => {
+            const example = e.target.value;
+            if (example && examples[example]) {
+                codeInput.value = examples[example];
+            }
+            e.target.value = '';
+        });
+        
+        // Zoom and pan controls
+        fitBtn.addEventListener('click', fitToScreen);
+        zoomInBtn.addEventListener('click', zoomIn);
+        zoomOutBtn.addEventListener('click', zoomOut);
+        resetLayoutBtn.addEventListener('click', resetLayout);
+        layoutDirBtn.addEventListener('click', toggleLayoutDirection);
+        legendBtn.addEventListener('click', toggleLegend);
+        
+        // Fullscreen controls
+        fullscreenBtn.addEventListener('click', toggleFullscreen);
+        fullscreenCloseBtn.addEventListener('click', toggleFullscreen);
+        fitBtnFs.addEventListener('click', fitToScreenFs);
+        zoomInBtnFs.addEventListener('click', zoomInFs);
+        zoomOutBtnFs.addEventListener('click', zoomOutFs);
+        resetLayoutBtnFs.addEventListener('click', resetLayoutFs);
+        layoutDirBtnFs.addEventListener('click', toggleLayoutDirectionFs);
+        
+        // Close node detail panel
+        closePanelBtn.addEventListener('click', () => {
+            nodeDetailPanel.classList.remove('open');
+        });
+        
+        // Close panel on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && nodeDetailPanel.classList.contains('open')) {
+                nodeDetailPanel.classList.remove('open');
+            }
+        });
+        
+        // Close panel when clicking outside (on the diagram)
+        if (cy) {
+            cy.on('tap', function(evt) {
+                if (evt.target === cy) {
+                    // Clicked on background, not a node
+                    nodeDetailPanel.classList.remove('open');
+                }
+            });
+        }
+        
+        // Toggle Mermaid code panel
+        mermaidCodeHeader.addEventListener('click', () => {
+            const icon = mermaidCodeHeader.querySelector('.collapse-icon');
+            mermaidCodeContent.classList.toggle('open');
+            icon.classList.toggle('open');
+        });
+        
+        // Copy Mermaid code to clipboard
+        copyMermaidBtn.addEventListener('click', () => {
+            const code = mermaidCodePre.textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                const originalText = copyMermaidBtn.textContent;
+                copyMermaidBtn.textContent = '✓ Copied!';
+                setTimeout(() => {
+                    copyMermaidBtn.textContent = originalText;
+                }, 2000);
+            });
+        });
+        
+        // Check API status on load
+        checkApiStatus();
+        setInterval(checkApiStatus, 10000); // Check every 10 seconds
+        
+        // Load graph from URL if present
+        loadFromURL();
+    </script>
+</body>
+</html>

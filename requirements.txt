@@ -1,0 +1,7 @@
+# Runtime dependencies for the web service.
+# NOTE: The parser uses Python's built-in `ast` module and never imports
+# langgraph, so langgraph is NOT required to run or deploy this app.
+# (It's only needed if you want to actually execute the example graphs.)
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
